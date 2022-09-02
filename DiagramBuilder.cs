@@ -16,7 +16,13 @@ namespace SampleBuilder
         {
             lines.Add("@startuml");
         }
-        
+
+
+        public void SetTitle(string title)
+        {
+            lines.Add($"title {title}");
+        }
+
 
         public void AddBranch(string toBranchName, string fromBranchName = null)
         {

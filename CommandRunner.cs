@@ -15,11 +15,15 @@ namespace SampleBuilder
         private const string GitCommand = "git";
         private const string CommitCommand = "commit";
         private const string ShowVersionCommand = "showver";
+        private const string IncludeCommand = "include";
+        private const string TitleCommand = "title";
+        private const string ConfigCommand = "config";
         
         private readonly DiagramBuilder diagram;
         private readonly DirectoryInfo workDir;
         private readonly List<GitEntry> gitEntries = new();
         private readonly HashSet<string> activeBranches = new();
+        private readonly Stack<FileInfo> fileStack = new();
 
         private string currentBranch;
         private int commitNumber;
@@ -68,6 +72,44 @@ namespace SampleBuilder
         }
 
 
+        public async Task ProcessFileAsync(string filename, CancellationToken cancellationToken)
+        {
+            // Figure out the path to use
+            FileInfo info;
+            if (fileStack.Any())
+            {
+                var parent = fileStack.Peek();
+                info = new FileInfo(Path.Join(parent?.Directory?.FullName, filename));
+            }
+            else
+            {
+                info = new FileInfo(filename);
+            }
+            
+            fileStack.Push(info);
+
+            // Process the file
+            await using (var stream = new FileStream(info.FullName, FileMode.Open, FileAccess.Read))
+            using (var reader = new StreamReader(stream))
+            {
+                string line;
+                while ((line = await reader.ReadLineAsync()) != null)
+                {
+                    line = line.TrimEnd();
+                    if (string.IsNullOrEmpty(line) || line.StartsWith("#"))
+                    {
+                        continue;
+                    }
+
+                    await RunCommandAsync(line, cancellationToken);
+                }
+            }
+            
+            // Clean the stack
+            fileStack.Pop();
+        }
+
+
         public async Task RunCommandAsync(string command, CancellationToken cancellationToken)
         {
             Console.WriteLine("command: {0}", command);
@@ -95,6 +137,24 @@ namespace SampleBuilder
                 
                 await DoShowVersionAsync(verb == "all", cancellationToken);
             }
+            else if (command.StartsWith(TitleCommand))
+            {
+                var title = command.Substring(TitleCommand.Length + 1);
+
+                diagram.SetTitle(title);
+            }
+            else if (command.StartsWith(IncludeCommand))
+            {
+                var filename = command.Substring(IncludeCommand.Length + 1);
+
+                await ProcessFileAsync(filename, cancellationToken);
+            }
+            else if (command.StartsWith(ConfigCommand))
+            {
+                var filename = command.Substring(ConfigCommand.Length + 1);
+                
+                ProcessConfig(filename);
+            }
             else
             {
                 Console.WriteLine("Do not know how to handle command: \"{0}\"", command);
@@ -118,6 +178,15 @@ namespace SampleBuilder
             await ExecuteGitCommandAsync($"commit -m\"Commit #{commitNumber}\"", cancellationToken);
 
             diagram.AddCommit(currentBranch, commitNumber);
+        }
+
+
+        private void ProcessConfig(string filename)
+        {
+            var sourceInfo = new FileInfo(Path.Join(fileStack.Peek()?.Directory?.FullName, filename));
+            var destPath = Path.Join(workDir.FullName, "GitVersion.yml");
+
+            sourceInfo.CopyTo(destPath);
         }
 
 

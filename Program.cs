@@ -21,8 +21,14 @@ namespace SampleBuilder
                         eventArgs.Cancel = true;
                     };
                     
-                    // TODO - pull script name from args
-                    var scriptName = "sample.txt";
+                    // Pull the script name from args
+                    if (args.Length == 0)
+                    {
+                        Console.WriteLine("You must specify the file to process.");
+                        return;
+                    }
+
+                    var scriptName = args[0];
 
                     // Set up the command runner
                     var diagram = new DiagramBuilder();
@@ -30,21 +36,7 @@ namespace SampleBuilder
                     await runner.InitAsync(tokenSource.Token);
 
                     // Process the script
-                    await using (var stream = new FileStream(scriptName, FileMode.Open, FileAccess.Read))
-                    using (var reader = new StreamReader(stream))
-                    {
-                        string line;
-                        while ((line = await reader.ReadLineAsync()) != null)
-                        {
-                            line = line.TrimEnd();
-                            if (string.IsNullOrEmpty(line) || line.StartsWith("#"))
-                            {
-                                continue;
-                            }
-
-                            await runner.RunCommandAsync(line, tokenSource.Token);
-                        }
-                    }
+                    await runner.ProcessFileAsync(scriptName, tokenSource.Token);
                     
                     // Write out the diagram
                     await diagram.WriteAsync(Path.GetFileNameWithoutExtension(scriptName), tokenSource.Token);
