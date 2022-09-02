@@ -215,7 +215,7 @@ namespace SampleBuilder
             await ExecuteGitCommandAsync($"checkout {branchName}", cancellationToken);
             
             // Get the version info and parse it
-            var (stdout, _) = await Command.ReadAsync("dotnet-gitversion", workingDirectory: workDir.FullName, cancellationToken: cancellationToken);
+            var (stdout, _) = await Command.ReadAsync("gitversion", workingDirectory: workDir.FullName, cancellationToken: cancellationToken);
 
             var versionInfo = JsonSerializer.Deserialize<GitVersionInfo>(stdout);
 

@@ -1,6 +1,9 @@
-assembly-versioning-scheme: MajorMinorPatch
-mode: ContinuousDeployment
-branches: {}
-ignore:
-  sha: []
-merge-message-formats: {}
+branches:
+  main:
+    tag: beta
+    increment: Patch
+    mode: ContinuousDeployment
+  develop:
+    tag: alpha
+    increment: Patch
+    mode: ContinuousDeployment
