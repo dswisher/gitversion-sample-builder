@@ -12,15 +12,37 @@ namespace SampleBuilder
         private readonly List<string> lines = new();
         private readonly Dictionary<string, string> branchMap = new();
 
+        private Func<GitVersionInfo, string> versionFetcher;
+
         public DiagramBuilder()
         {
             lines.Add("@startuml");
+
+            versionFetcher = x => x.FullSemVer;
         }
 
 
         public void SetTitle(string title)
         {
             lines.Add($"title {title}");
+        }
+
+
+        public void SetVersion(string kind)
+        {
+            switch (kind)
+            {
+                case "full":
+                    versionFetcher = x => x.FullSemVer;
+                    break;
+
+                case "nuget":
+                    versionFetcher = x => x.NuGetVersionV2;
+                    break;
+
+                default:
+                    throw new Exception($"Invalid version kind: {kind}");
+            }
         }
 
 
@@ -32,7 +54,7 @@ namespace SampleBuilder
             }
 
             var toBranchId = $"b{branchMap.Count + 1}";
-            
+
             branchMap.Add(toBranchName, toBranchId);
 
             var create = string.Empty;
@@ -43,21 +65,36 @@ namespace SampleBuilder
 
             // TODO - better color?
             lines.Add($"{create}participant \"{toBranchName}\" as {toBranchId} #99FF99");
-            
+
             // If there is a source branch, add a link
             if (fromBranchName != null)
             {
                 var fromBranchId = branchMap[fromBranchName];
-                
+
                 lines.Add($"{fromBranchId} -> {toBranchId}: branch from {fromBranchName}");
             }
         }
-        
-        
+
+
+        public void DeleteBranch(string branchName)
+        {
+            if (!branchMap.ContainsKey(branchName))
+            {
+                throw new Exception($"Attempt to delete unknown branch: {branchName}");
+            }
+
+            var branchId = branchMap[branchName];
+
+            branchMap.Remove(branchName);
+
+            lines.Add($"rnote over {branchId} #aqua: (deleted)");
+        }
+
+
         public void AddCommit(string branchName, int commitNumber)
         {
             var branchId = branchMap[branchName];
-            
+
             lines.Add($"{branchId} -> {branchId}: commit");
         }
 
@@ -65,16 +102,18 @@ namespace SampleBuilder
         public void AddTag(string branchName, string tag)
         {
             var branchId = branchMap[branchName];
-            
+
             lines.Add($"{branchId} -> {branchId}: tag {tag}");
         }
 
 
-        public void AddVersion(string branchName, string version, bool sameLine)
+        public void AddVersion(string branchName, GitVersionInfo versionInfo, bool sameLine)
         {
             var branchId = branchMap[branchName];
             var slash = sameLine ? "/ " : string.Empty;
-            
+
+            string version = versionFetcher(versionInfo);
+
             lines.Add($"{slash}rnote over {branchId}: {version}");
         }
 
@@ -83,7 +122,7 @@ namespace SampleBuilder
         {
             var toBranchId = branchMap[toBranchName];
             var fromBranchId = branchMap[fromBranchName];
-            
+
             lines.Add($"{toBranchId} <- {fromBranchId}: merge");
         }
 
@@ -99,7 +138,7 @@ namespace SampleBuilder
             {
                 outputDir.Create();
             }
-            
+
             // Finish up the diagram
             lines.Add("@enduml");
 

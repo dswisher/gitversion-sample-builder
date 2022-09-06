@@ -7,3 +7,7 @@ branches:
     tag: alpha
     increment: Patch
     mode: ContinuousDeployment
+  feature:
+    tag: useBranchName
+    increment: Patch
+    mode: ContinuousDeployment

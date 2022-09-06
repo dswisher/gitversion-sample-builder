@@ -1,6 +1,7 @@
 
 title Custom Settings
+ver nuget
 
 config custom-settings.yml
 
-include git-script.txt
+include script-with-backport.txt

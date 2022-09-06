@@ -37,3 +37,6 @@ git merge develop
 showver all
 
 git tag 1.0.2
+
+showver all
+

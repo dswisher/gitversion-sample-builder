@@ -1,0 +1,7 @@
+
+title Custom Settings
+ver nuget
+
+config custom-settings.yml
+
+include script-on-feature.txt

@@ -17,8 +17,9 @@ namespace SampleBuilder
         private const string ShowVersionCommand = "showver";
         private const string IncludeCommand = "include";
         private const string TitleCommand = "title";
+        private const string VersionCommand = "ver";
         private const string ConfigCommand = "config";
-        
+
         private readonly DiagramBuilder diagram;
         private readonly DirectoryInfo workDir;
         private readonly List<GitEntry> gitEntries = new();
@@ -28,25 +29,26 @@ namespace SampleBuilder
         private string currentBranch;
         private int commitNumber;
 
-        
+
         public CommandRunner(DiagramBuilder diagram)
         {
             this.diagram = diagram;
-            
+
             // Determine the path
             // var workPath = Path.Join(Path.GetTempPath(), "sample-builder");
             var workPath = "/tmp/sample-builder";   // TODO - HACK!
             workDir = new DirectoryInfo(workPath);
-            
+
             // Set up the handlers for the various git commands
             AddEntry("init", IgnoreSubCommand);
             AddEntry("branch -m main", IgnoreSubCommand);
             AddEntry("tag (.*)", TagSubCommand);
-            AddEntry("branch (.*)", BranchSubCommand);
+            AddEntry("branch -d (.*)", DeleteBranchSubCommand);
+            AddEntry("branch (.*)", CreateBranchSubCommand);
             AddEntry("checkout (.*)", CheckoutSubCommand);
             AddEntry("merge (.*)", MergeSubCommand);
         }
-        
+
 
         public async Task InitAsync(CancellationToken cancellationToken)
         {
@@ -55,18 +57,18 @@ namespace SampleBuilder
             {
                 workDir.Delete(true);
             }
-            
+
             workDir.Create();
-            
+
             // Initialize git.
             await RunCommandAsync("git init", cancellationToken);
             await RunCommandAsync("git branch -m main", cancellationToken);
-            
+
             // Bootstrap the diagram by creating the main branch
             currentBranch = "main";
             diagram.AddBranch(currentBranch);
             activeBranches.Add(currentBranch);
-            
+
             // We need at least one commit for GitVersion to work at all.
             await RunCommandAsync("commit file1.txt", cancellationToken);
         }
@@ -85,7 +87,7 @@ namespace SampleBuilder
             {
                 info = new FileInfo(filename);
             }
-            
+
             fileStack.Push(info);
 
             // Process the file
@@ -104,7 +106,7 @@ namespace SampleBuilder
                     await RunCommandAsync(line, cancellationToken);
                 }
             }
-            
+
             // Clean the stack
             fileStack.Pop();
         }
@@ -116,15 +118,15 @@ namespace SampleBuilder
             if (command.StartsWith(GitCommand))
             {
                 var subCommand = command.Substring(GitCommand.Length + 1);
-                
+
                 await ExecuteGitCommandAsync(subCommand, cancellationToken);
-                
+
                 UpdateDiagramWithGitCommand(subCommand);
             }
             else if (command.StartsWith(CommitCommand))
             {
                 var filename = command.Substring(CommitCommand.Length + 1);
-                
+
                 await DoCommitAsync(filename, cancellationToken);
             }
             else if (command.StartsWith(ShowVersionCommand))
@@ -134,7 +136,7 @@ namespace SampleBuilder
                 {
                     verb = command.Substring(ShowVersionCommand.Length + 1);
                 }
-                
+
                 await DoShowVersionAsync(verb == "all", cancellationToken);
             }
             else if (command.StartsWith(TitleCommand))
@@ -142,6 +144,12 @@ namespace SampleBuilder
                 var title = command.Substring(TitleCommand.Length + 1);
 
                 diagram.SetTitle(title);
+            }
+            else if (command.StartsWith(VersionCommand))
+            {
+                var kind = command.Substring(VersionCommand.Length + 1);
+
+                diagram.SetVersion(kind);
             }
             else if (command.StartsWith(IncludeCommand))
             {
@@ -152,7 +160,7 @@ namespace SampleBuilder
             else if (command.StartsWith(ConfigCommand))
             {
                 var filename = command.Substring(ConfigCommand.Length + 1);
-                
+
                 ProcessConfig(filename);
             }
             else
@@ -198,7 +206,7 @@ namespace SampleBuilder
                 foreach (var branch in activeBranches)
                 {
                     await AddVersionToDiagramAsync(branch, !first, cancellationToken);
-                    
+
                     first = false;
                 }
             }
@@ -213,7 +221,7 @@ namespace SampleBuilder
         {
             // Make sure we are on the specified branch
             await ExecuteGitCommandAsync($"checkout {branchName}", cancellationToken);
-            
+
             // Get the version info and parse it
             var (stdout, _) = await Command.ReadAsync("gitversion", workingDirectory: workDir.FullName, cancellationToken: cancellationToken);
 
@@ -225,8 +233,8 @@ namespace SampleBuilder
             }
 
             // Add a note to the branch within the diagram
-            diagram.AddVersion(branchName, versionInfo.FullSemVer, sameLine);
-            
+            diagram.AddVersion(branchName, versionInfo, sameLine);
+
             // Make sure we go back to the current branch
             await ExecuteGitCommandAsync($"checkout {currentBranch}", cancellationToken);
         }
@@ -246,7 +254,7 @@ namespace SampleBuilder
                 Pattern = new Regex(pattern, RegexOptions.Compiled),
                 Worker = worker
             };
-            
+
             gitEntries.Add(entry);
         }
 
@@ -263,7 +271,7 @@ namespace SampleBuilder
                     return;
                 }
             }
-            
+
             // If we make it here, no match was found.
             throw new Exception($"Git subcommand '{subCommand}' was not handled.");
         }
@@ -273,27 +281,34 @@ namespace SampleBuilder
         {
             // Nothing to do for these
         }
-        
-        
+
+
         private void TagSubCommand(List<string> parameters)
         {
             diagram.AddTag(currentBranch, parameters[0]);
         }
-        
-        
-        private void BranchSubCommand(List<string> parameters)
+
+
+        private void CreateBranchSubCommand(List<string> parameters)
         {
             diagram.AddBranch(parameters[0], currentBranch);
             activeBranches.Add(parameters[0]);
         }
-        
-        
+
+
+        private void DeleteBranchSubCommand(List<string> parameters)
+        {
+            diagram.DeleteBranch(parameters[0]);
+            activeBranches.Remove(parameters[0]);
+        }
+
+
         private void CheckoutSubCommand(List<string> parameters)
         {
             currentBranch = parameters[0];
         }
-        
-        
+
+
         private void MergeSubCommand(List<string> parameters)
         {
             diagram.AddMerge(currentBranch, parameters[0]);
@@ -304,15 +319,6 @@ namespace SampleBuilder
         {
             public Regex Pattern { get; init; }
             public Action<List<string>> Worker { get; init; }
-        }
-
-
-        private class GitVersionInfo
-        {
-            public string FullSemVer { get; set; }
-            public string NuGetVersionV2 { get; set; }
-            
-            // Lots more properties, if we need em...
         }
     }
 }
